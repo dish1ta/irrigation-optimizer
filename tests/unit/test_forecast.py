@@ -19,7 +19,7 @@ from datetime import date
 from google.genai import types
 from pydantic import ValidationError
 
-from app.agent import FORECAST_CACHE, fetch_weather_data, get_forecast
+from app.agent import FORECAST_CACHE, fetch_weather, get_forecast
 
 
 class TestGetForecast(unittest.TestCase):
@@ -144,12 +144,12 @@ class TestGetForecast(unittest.TestCase):
         self.assertEqual(mock_get.call_count, 2)
 
 
-class TestFetchWeatherData(unittest.TestCase):
+class TestFetchWeather(unittest.TestCase):
     def setUp(self):
         FORECAST_CACHE.clear()
 
     @patch("requests.get")
-    def test_missing_input_fallback(self, mock_get):
+    def test_fetch_weather_success(self, mock_get):
         # Mock successful forecast response
         mock_response = MagicMock()
         mock_response.ok = True
@@ -161,57 +161,34 @@ class TestFetchWeatherData(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        # Test genuinely empty/missing input
+        # Test with coordinates stored in state
         ctx = MagicMock()
-        ctx.state = {}
-        node_input = types.Content(parts=[types.Part.from_text(text="")])
+        ctx.state = {"latitude": -1.2921, "longitude": 36.8219}
 
-        # Call the underlying function of fetch_weather_data (i.e. _func)
-        result = fetch_weather_data._func(ctx, node_input)
+        # Call the underlying function of fetch_weather
+        result = fetch_weather._func(ctx, None)
 
-        # Verify default fallback values (Tomatoes, Nairobi)
-        self.assertEqual(ctx.state["crop"]["crop_type"], "Tomatoes")
-        self.assertEqual(ctx.state["crop"]["planting_date"], date(2026, 3, 1))
-        self.assertEqual(ctx.state["crop"]["field_size_ha"], 0.001)
+        # Verify coordinates and results
         self.assertEqual(len(result.forecast), 7)
-
-        # Verify requests.get was called with Nairobi coordinates
+        self.assertEqual(result.forecast[0].et0_mm, 3.2)
         mock_get.assert_called_once()
         _, kwargs = mock_get.call_args
         self.assertEqual(kwargs["params"]["latitude"], -1.2921)
         self.assertEqual(kwargs["params"]["longitude"], 36.8219)
 
-    def test_malformed_json(self):
+    def test_fetch_weather_missing_state_coords(self):
+        # Verify KeyError is raised when coordinates are missing in state (no fallback to default Nairobi coords)
         ctx = MagicMock()
         ctx.state = {}
-        node_input = types.Content(parts=[types.Part.from_text(text="invalid json{")])
+        with self.assertRaises(KeyError):
+            fetch_weather._func(ctx, None)
 
+    @patch("app.agent.get_forecast", side_effect=ValueError("Weather API is down or returned malformed data"))
+    def test_fetch_weather_propagates_api_error(self, mock_get_forecast):
+        # Verify that get_forecast errors propagate directly and raise instead of silently swallowing or falling back
+        ctx = MagicMock()
+        ctx.state = {"latitude": 1.29, "longitude": 36.82}
         with self.assertRaises(ValueError) as context:
-            fetch_weather_data._func(ctx, node_input)
-        self.assertIn("Invalid JSON input", str(context.exception))
+            fetch_weather._func(ctx, None)
+        self.assertEqual(str(context.exception), "Weather API is down or returned malformed data")
 
-    def test_out_of_range_latitude(self):
-        ctx = MagicMock()
-        ctx.state = {}
-        # latitude = 95.0 is out of bounds
-        payload = '{"crop": {"crop_type": "Tomatoes", "planting_date": "2026-03-01", "field_size_ha": 0.001}, "latitude": 95.0, "longitude": 36.8219}'
-        node_input = types.Content(parts=[types.Part.from_text(text=payload)])
-
-        with self.assertRaises(ValidationError) as context:
-            fetch_weather_data._func(ctx, node_input)
-        self.assertIn(
-            "Input should be less than or equal to 90", str(context.exception)
-        )
-
-    def test_out_of_range_longitude(self):
-        ctx = MagicMock()
-        ctx.state = {}
-        # longitude = -190.0 is out of bounds
-        payload = '{"crop": {"crop_type": "Tomatoes", "planting_date": "2026-03-01", "field_size_ha": 0.001}, "latitude": 1.2921, "longitude": -190.0}'
-        node_input = types.Content(parts=[types.Part.from_text(text=payload)])
-
-        with self.assertRaises(ValidationError) as context:
-            fetch_weather_data._func(ctx, node_input)
-        self.assertIn(
-            "Input should be greater than or equal to -180", str(context.exception)
-        )
