@@ -191,4 +191,3 @@ class TestFetchWeather(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             fetch_weather._func(ctx, None)
         self.assertEqual(str(context.exception), "Weather API is down or returned malformed data")
-

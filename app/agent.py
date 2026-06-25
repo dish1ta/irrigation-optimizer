@@ -176,19 +176,19 @@ def load_supported_crops() -> List[str]:
 # Deterministic Natural Language Parser (regex/substring checks, no hidden model calls)
 def parse_profile_from_text(text: str) -> dict:
     extracted = {}
-    
+
     # 1. Crop lookup (case-insensitive)
     supported_crops = load_supported_crops()
     for crop in supported_crops:
         if re.search(r'\b' + re.escape(crop) + r'\b', text, re.IGNORECASE):
             extracted["crop"] = crop
             break
-            
+
     # 2. Field size regex (matches "5 ha", "2.5 hectares", "size is 10ha")
     size_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:ha|hectare)', text, re.IGNORECASE)
     if size_match:
         extracted["field_size_ha"] = float(size_match.group(1))
-        
+
     # 3. Planting date regex (YYYY-MM-DD)
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
     if date_match:
@@ -197,7 +197,7 @@ def parse_profile_from_text(text: str) -> dict:
             extracted["planting_date"] = date_match.group(1)
         except ValueError:
             pass
-            
+
     # 4. Lat/Lon regex (strictly requires explicit labels, allows optional quotes)
     lat_match = re.search(r'"?(?:lat(?:itude)?)"?\s*[:=]?\s*(-?\d+(?:\.\d+)?)', text, re.IGNORECASE)
     lon_match = re.search(r'"?(?:lon(?:gitude)?)"?\s*[:=]?\s*(-?\d+(?:\.\d+)?)', text, re.IGNORECASE)
@@ -205,7 +205,15 @@ def parse_profile_from_text(text: str) -> dict:
         extracted["latitude"] = float(lat_match.group(1))
     if lon_match:
         extracted["longitude"] = float(lon_match.group(1))
-                
+
+    # 5. PII Consent / Opt-in detection
+    if re.search(r'\b(?:save|persist|remember|store)\s+(?:my\s+)?profile\b', text, re.IGNORECASE) or \
+       re.search(r'\bopt[- ]*in\b', text, re.IGNORECASE):
+        extracted["profile_saved_opt_in"] = True
+    elif re.search(r'\b(?:don\'?t\s+save|delete|remove|clear)\s+(?:my\s+)?profile\b', text, re.IGNORECASE) or \
+         re.search(r'\bopt[- ]*out\b', text, re.IGNORECASE):
+        extracted["profile_saved_opt_in"] = False
+
     return extracted
 
 
@@ -213,7 +221,7 @@ def parse_profile_from_text(text: str) -> dict:
 
 class ProfileValidation(BaseModel):
     is_valid: bool = Field(description="True if all profile fields are present and valid, False otherwise")
-    missing_fields: List[str] = Field(description="List of fields that are missing or invalid (e.g. crop, latitude, longitude, field_size_ha, planting_date)")
+    missing_fields: List[str] = Field(description="List of fields that are missing or invalid")
     reason: str = Field(description="Explanation of why the profile is invalid/complete")
     clarifying_question: str = Field(description="Friendly clarifying question to ask the farmer for the missing or invalid information. Empty if valid.")
 
@@ -229,6 +237,8 @@ class IrrigationStateSchema(BaseModel):
     longitude: Optional[float] = None
     field_size_ha: Optional[float] = None
     planting_date: Optional[str] = None
+    profile_saved_opt_in: Optional[bool] = None
+    security_blocked: Optional[bool] = None
     profile_validation: Optional[ProfileValidation] = None
     irrigation_recommendation: Optional[IrrigationRecommendation] = None
 
@@ -244,6 +254,92 @@ class WeatherData(BaseModel):
     forecast: List[DailyForecast]
 
 
+# Deterministic validation backstop independent of the LLM
+def validate_profile_deterministically(profile: dict) -> Tuple[bool, List[str], str, str]:
+    """Deterministically validates profile fields using explicit checks and Pydantic rules."""
+    missing_fields = []
+    invalid_fields = []
+
+    # 1. Completeness check
+    for field in ["crop", "latitude", "longitude", "field_size_ha", "planting_date"]:
+        if profile.get(field) is None:
+            missing_fields.append(field)
+
+    # 2. Sane range and type checks on provided fields
+    supported = load_supported_crops()
+
+    crop = profile.get("crop")
+    if crop is not None:
+        if str(crop).lower() not in [c.lower() for c in supported]:
+            invalid_fields.append("crop")
+
+    lat = profile.get("latitude")
+    if lat is not None:
+        try:
+            val = float(lat)
+            if not (-90.0 <= val <= 90.0):
+                invalid_fields.append("latitude")
+        except ValueError:
+            invalid_fields.append("latitude")
+
+    lon = profile.get("longitude")
+    if lon is not None:
+        try:
+            val = float(lon)
+            if not (-180.0 <= val <= 180.0):
+                invalid_fields.append("longitude")
+        except ValueError:
+            invalid_fields.append("longitude")
+
+    size = profile.get("field_size_ha")
+    if size is not None:
+        try:
+            val = float(size)
+            if val <= 0.0:
+                invalid_fields.append("field_size_ha")
+        except ValueError:
+            invalid_fields.append("field_size_ha")
+
+    pdate = profile.get("planting_date")
+    if pdate is not None:
+        try:
+            if isinstance(pdate, date):
+                pass
+            else:
+                datetime.strptime(str(pdate), "%Y-%m-%d")
+        except ValueError:
+            invalid_fields.append("planting_date")
+
+    all_failures = missing_fields + invalid_fields
+    if all_failures:
+        reasons = []
+        clarifications = []
+
+        if "crop" in all_failures:
+            if crop:
+                reasons.append(f"{crop} is not a supported crop.")
+                clarifications.append(f"choose one of the supported crops: {', '.join(supported)}")
+            else:
+                reasons.append("Crop is missing.")
+                clarifications.append(f"provide a supported crop ({', '.join(supported)})")
+        if "latitude" in all_failures or "longitude" in all_failures:
+            reasons.append("Coordinates are missing or out of valid ranges (latitude: [-90, 90], longitude: [-180, 180]).")
+            clarifications.append("provide valid coordinates (latitude and longitude)")
+        if "field_size_ha" in all_failures:
+            reasons.append("Field size must be a positive number of hectares.")
+            clarifications.append("provide a positive field size in hectares")
+        if "planting_date" in all_failures:
+            reasons.append("Planting date is missing or not in YYYY-MM-DD format.")
+            clarifications.append("provide a valid planting date in YYYY-MM-DD format")
+
+        reason_str = " ".join(reasons)
+        clarifying_question = "Please " + ", and ".join(clarifications) + "."
+
+        return False, all_failures, reason_str, clarifying_question
+
+    return True, [], "", ""
+
+
 # Workflow Nodes
 
 # 1. Save Profile Node
@@ -256,12 +352,16 @@ def save_profile(ctx: Context, node_input: types.Content) -> dict:
     elif isinstance(node_input, str):
         text = node_input
 
+    # Reset security blocked flag on new turn
+    ctx.state["security_blocked"] = False
+
     profile = {
         "crop": ctx.state.get("crop"),
         "latitude": ctx.state.get("latitude"),
         "longitude": ctx.state.get("longitude"),
         "field_size_ha": ctx.state.get("field_size_ha"),
         "planting_date": ctx.state.get("planting_date"),
+        "profile_saved_opt_in": ctx.state.get("profile_saved_opt_in"),
     }
 
     # Try parsing as JSON first (useful for API/tests)
@@ -279,9 +379,9 @@ def save_profile(ctx: Context, node_input: types.Content) -> dict:
                         profile["planting_date"] = str(crop_info["planting_date"])
                     if "field_size_ha" in crop_info:
                         profile["field_size_ha"] = float(crop_info["field_size_ha"])
-                
+
                 # Direct fields
-                for k in ["crop", "latitude", "longitude", "field_size_ha", "planting_date"]:
+                for k in ["crop", "latitude", "longitude", "field_size_ha", "planting_date", "profile_saved_opt_in"]:
                     if k in data and data[k] is not None:
                         if k == "crop" and isinstance(data[k], dict):
                             continue
@@ -289,6 +389,8 @@ def save_profile(ctx: Context, node_input: types.Content) -> dict:
                             profile["crop"] = data[k]
                         elif k in ("latitude", "longitude", "field_size_ha"):
                             profile[k] = float(data[k])
+                        elif k == "profile_saved_opt_in":
+                            profile[k] = bool(data[k])
                         else:
                             profile[k] = str(data[k])
                 parsed_json = True
@@ -335,8 +437,32 @@ validate_profile = LlmAgent(
 # 3. Route Validation Node
 @node
 def route_validation(ctx: Context, node_input: Any) -> Any:
-    """Sets the workflow route based on the validation result."""
+    """Sets the workflow route based on the validation result, with a deterministic backstop."""
     logger.info(f"ROUTE_VALIDATION: node_input={node_input}")
+
+    # 1. Run deterministic validation backstop first
+    profile = {
+        "crop": ctx.state.get("crop"),
+        "latitude": ctx.state.get("latitude"),
+        "longitude": ctx.state.get("longitude"),
+        "field_size_ha": ctx.state.get("field_size_ha"),
+        "planting_date": ctx.state.get("planting_date"),
+    }
+    det_valid, det_failures, det_reason, det_question = validate_profile_deterministically(profile)
+
+    if not det_valid:
+        logger.warning(f"ROUTE_VALIDATION: Deterministic backstop failed: {det_failures} - {det_reason}")
+        val = ProfileValidation(
+            is_valid=False,
+            missing_fields=det_failures,
+            reason=det_reason,
+            clarifying_question=det_question
+        )
+        ctx.state["profile_validation"] = val
+        ctx.route = False
+        return val
+
+    # 2. Fallback to LLM validation output
     val = node_input
     if val is None:
         val = ctx.state.get("profile_validation")
@@ -344,7 +470,7 @@ def route_validation(ctx: Context, node_input: Any) -> Any:
         logger.warning("ROUTE_VALIDATION: profile_validation is None!")
         ctx.route = False
         return None
-        
+
     if hasattr(val, "is_valid"):
         ctx.route = val.is_valid
     elif isinstance(val, dict):
@@ -362,16 +488,16 @@ def clarify_profile(ctx: Context, node_input: Any) -> None:
     val = node_input
     if val is None:
         val = ctx.state.get("profile_validation")
-        
+
     question = ""
     if val and hasattr(val, "clarifying_question"):
         question = val.clarifying_question
     elif isinstance(val, dict):
         question = val.get("clarifying_question", "")
-        
+
     if not question:
         question = "Please provide your crop type, location coordinates (latitude and longitude), field size (in hectares), and planting date to generate your irrigation schedule."
-        
+
     yield Event(
         content=types.Content(
             role="model",
@@ -396,7 +522,7 @@ def fetch_weather(ctx: Context, node_input: Any) -> WeatherData:
 def compute_schedule(ctx: Context, node_input: WeatherData) -> dict:
     """Calls the irrigation-calculator skill with the weather forecast and profile."""
     crop = ctx.state["crop"].lower()
-    
+
     # Calculate days_after_planting
     planting_date_val = ctx.state["planting_date"]
     if isinstance(planting_date_val, date):
@@ -449,7 +575,78 @@ def compute_schedule(ctx: Context, node_input: WeatherData) -> dict:
         check=True
     )
 
-    return json.loads(result.stdout)
+    schedule_output = json.loads(result.stdout)
+
+    # Output Guardrail: Enforce MAX_DAILY_MM = 60.0 and log warning
+    MAX_DAILY_MM = 60.0
+    for day in schedule_output.get("schedule", []):
+        net_mm = day.get("net_irrigation_mm", 0.0)
+        etc_mm = day.get("etc_mm", 0.0)
+        eff_rain = day.get("effective_rain_mm", 0.0)
+        calculated_uncapped_mm = etc_mm - eff_rain
+
+        if calculated_uncapped_mm > MAX_DAILY_MM or net_mm > MAX_DAILY_MM:
+            logger.warning(
+                f"Output Guardrail Triggered: Daily irrigation depth for date {day.get('date')} "
+                f"exceeded MAX_DAILY_MM ({MAX_DAILY_MM} mm). Uncapped: {calculated_uncapped_mm:.2f} mm. Capping."
+            )
+            day["net_irrigation_mm"] = MAX_DAILY_MM
+            day["liters_needed"] = round(MAX_DAILY_MM * field_size_ha * 10000.0, 1)
+
+    return schedule_output
+
+
+# 6.5. Security Screening Node
+@node
+def security_screen(ctx: Context, node_input: Any) -> Any:
+    """Screens the current turn's latest user message for prompt-injection patterns."""
+    user_text = ""
+    if ctx.session and ctx.session.events:
+        # Scan backward to find strictly the latest user message from the current turn
+        for ev in reversed(ctx.session.events):
+            if ev.author == "user" and ev.content and ev.content.parts:
+                user_text = "".join(part.text for part in ev.content.parts if part.text)
+                break  # Scope strictly to current turn's input
+
+    injection_patterns = [
+        r"(?i)ignore\s+(?:all\s+|previous\s+)?instructions",
+        r"(?i)system\s+override",
+        r"(?i)you\s+are\s+now\s+a\s+",
+        r"(?i)act\s+as\s+a\s+",
+        r"(?i)bypass\s+security",
+        r"(?i)prompt\s+injection",
+        r"(?i)ignore\s+above",
+        r"(?i)new\s+role",
+        r"(?i)dan\s+mode",
+    ]
+
+    is_injection = False
+    for pattern in injection_patterns:
+        if re.search(pattern, user_text):
+            is_injection = True
+            break
+
+    if is_injection:
+        logger.warning(f"Security Warning: Prompt injection detected on current turn: {user_text!r}")
+        ctx.route = False  # Route to canned_injection_response
+        ctx.state["security_blocked"] = True
+        return {"injection_detected": True, "schedule_data": node_input}
+    else:
+        ctx.route = True   # Route to recommend LLM Agent
+        ctx.state["security_blocked"] = False
+        return node_input
+
+
+# 6.6. Canned Injection Response Node
+@node
+def canned_injection_response(ctx: Context, node_input: Any) -> Any:
+    """Sets a safe canned response when prompt-injection is detected."""
+    response = IrrigationRecommendation(
+        crop_type=ctx.state.get("crop", "unknown"),
+        explanation="I am sorry, but I cannot fulfill this request. I am only able to provide irrigation recommendations and answer related agricultural questions."
+    )
+    ctx.state["irrigation_recommendation"] = response
+    return response
 
 
 # 7. LLM Recommend Agent Node
@@ -470,21 +667,65 @@ recommend = LlmAgent(
 # 8. Format Recommendation Node
 @node
 def format_recommendation(ctx: Context, node_input: Any) -> Any:
-    """Yields the friendly explanation to the user."""
+    """Yields the friendly explanation to the user and manages PII consent persistence."""
     logger.info(f"FORMAT_RECOMMENDATION: node_input={node_input}")
     val = node_input
     if val is None:
         val = ctx.state.get("irrigation_recommendation")
-        
+
     explanation = ""
     if val and hasattr(val, "explanation"):
         explanation = val.explanation
     elif isinstance(val, dict):
         explanation = val.get("explanation", "")
-        
+
     if not explanation:
         explanation = "Could not generate an irrigation recommendation. Please check your profile information."
-        
+
+    # Append advisory disclaimer ONLY on genuine recommendations
+    if not ctx.state.get("security_blocked", False):
+        disclaimer = "Advisory: This recommendation supplements, does not replace, local agricultural extension advice."
+        explanation = f"{explanation}\n\n{disclaimer}"
+
+    # PII consent saving pattern
+    user_id = ctx.session.user_id if (ctx.session and ctx.session.user_id) else "default_user"
+    opt_in = ctx.state.get("profile_saved_opt_in", False)
+    profiles_file = "saved_profiles.json"
+
+    if opt_in:
+        profile_data = {
+            "crop": ctx.state.get("crop"),
+            "latitude": ctx.state.get("latitude"),
+            "longitude": ctx.state.get("longitude"),
+            "field_size_ha": ctx.state.get("field_size_ha"),
+            "planting_date": ctx.state.get("planting_date"),
+        }
+        try:
+            if os.path.exists(profiles_file):
+                with open(profiles_file, "r") as f:
+                    profiles = json.load(f)
+            else:
+                profiles = {}
+            profiles[user_id] = profile_data
+            with open(profiles_file, "w") as f:
+                json.dump(profiles, f, indent=2)
+            logger.info(f"PII persisted for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to persist PII profile: {e}")
+    else:
+        # Consent not given: clean up profile from disk
+        if os.path.exists(profiles_file):
+            try:
+                with open(profiles_file, "r") as f:
+                    profiles = json.load(f)
+                if user_id in profiles:
+                    del profiles[user_id]
+                    with open(profiles_file, "w") as f:
+                        json.dump(profiles, f, indent=2)
+                    logger.info(f"PII cleared for user {user_id}")
+            except Exception as e:
+                logger.error(f"Failed to clean up PII profile: {e}")
+
     yield Event(
         content=types.Content(
             role="model",
@@ -507,7 +748,15 @@ edges = (
         Edge(from_node=route_validation, to_node=fetch_weather, route=True),
         Edge(from_node=route_validation, to_node=clarify_profile, route=False),
     ]
-    + chain_edges(fetch_weather, compute_schedule, recommend, format_recommendation)
+    + chain_edges(fetch_weather, compute_schedule, security_screen)
+    + [
+        Edge(from_node=security_screen, to_node=recommend, route=True),
+        Edge(from_node=security_screen, to_node=canned_injection_response, route=False),
+    ]
+    + [
+        Edge(from_node=recommend, to_node=format_recommendation),
+        Edge(from_node=canned_injection_response, to_node=format_recommendation),
+    ]
 )
 
 
@@ -519,7 +768,7 @@ workflow = Workflow(
     output_schema=IrrigationRecommendation,
 )
 
-# Wrap in App (the app name matches the directory 'app')
+# Wrap in App
 app = App(name="app", root_agent=workflow)
 root_agent = workflow
 
@@ -528,10 +777,9 @@ root_agent = workflow
 if os.environ.get("E2E_MOCK") == "TRUE":
     from google.adk.models.google_llm import Gemini
     from google.adk.models.llm_response import LlmResponse
-    
-    # Save the original method
+
     original_generate = Gemini.generate_content_async
-    
+
     async def mocked_generate(self, llm_request, stream=False):
         sys_inst = llm_request.config.system_instruction or ""
         prompt_text = ""
@@ -539,11 +787,10 @@ if os.environ.get("E2E_MOCK") == "TRUE":
             for part in content.parts:
                 if part.text:
                     prompt_text += part.text + "\n"
-        
+
         if "agronomy system validator" in sys_inst.lower():
             import json
-            
-            # Extract last user message (which contains the current profile from save_profile)
+
             user_text = ""
             for content in reversed(llm_request.contents):
                 if content.role == "user":
@@ -551,29 +798,29 @@ if os.environ.get("E2E_MOCK") == "TRUE":
                         if part.text:
                             user_text += part.text + "\n"
                     break
-            
+
             try:
                 profile = json.loads(user_text.strip())
             except Exception:
                 profile = {}
-                
+
             supported = load_supported_crops()
-            
+
             is_valid = True
             missing_fields = []
             clarifying_question = ""
-            
+
             crop = profile.get("crop")
             lat = profile.get("latitude")
             lon = profile.get("longitude")
             size = profile.get("field_size_ha")
             pdate = profile.get("planting_date")
-            
+
             if not crop:
                 missing_fields.append("crop")
             elif crop.lower() not in [c.lower() for c in supported]:
                 missing_fields.append("crop")
-                
+
             if lat is None or not (-90.0 <= lat <= 90.0):
                 missing_fields.append("latitude")
             if lon is None or not (-180.0 <= lon <= 180.0):
@@ -588,24 +835,24 @@ if os.environ.get("E2E_MOCK") == "TRUE":
                     datetime.strptime(str(pdate), "%Y-%m-%d")
                 except ValueError:
                     missing_fields.append("planting_date")
-                    
+
             if missing_fields:
                 is_valid = False
-                if crop and crop.lower() == "rice":
-                    clarifying_question = "Rice is not supported. Please choose one of the supported crops: wheat, maize, cotton, sugarcane, tomato, chickpea, groundnut."
+                if crop and crop.lower() not in [c.lower() for c in supported]:
+                    clarifying_question = f"{crop} is not supported. Please choose one of the supported crops: {', '.join(supported)}."
                 else:
                     clarifying_question = f"Please provide the missing or incorrect fields: {', '.join(missing_fields)}."
             else:
                 is_valid = True
                 clarifying_question = ""
-                
+
             validation_result = {
                 "is_valid": is_valid,
                 "missing_fields": missing_fields,
                 "reason": "Profile validation check",
                 "clarifying_question": clarifying_question
             }
-            
+
             from google.genai import types
             resp_obj = types.GenerateContentResponse(
                 candidates=[
@@ -618,7 +865,7 @@ if os.environ.get("E2E_MOCK") == "TRUE":
             )
             llm_response = LlmResponse.create(resp_obj)
             yield llm_response
-            
+
         elif "agronomy expert helper" in sys_inst.lower():
             import json
             recommendation_result = {
@@ -640,6 +887,5 @@ if os.environ.get("E2E_MOCK") == "TRUE":
         else:
             async for r in original_generate(self, llm_request, stream):
                 yield r
-                
-    Gemini.generate_content_async = mocked_generate
 
+    Gemini.generate_content_async = mocked_generate

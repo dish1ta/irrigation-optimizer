@@ -30,23 +30,27 @@ async def mock_run_llm_agent_as_node(agent, *, ctx, node_input):
         lon = ctx.state.get("longitude")
         size = ctx.state.get("field_size_ha")
         date_val = ctx.state.get("planting_date")
-        
+
         # In mock, check user history for unsupported crop detection
         user_text = ""
         for ev in reversed(ctx.session.events):
             if ev.author == "user" and ev.content and ev.content.parts:
                 user_text = "".join(part.text for part in ev.content.parts if part.text)
                 break
-        
-        if "rice" in user_text.lower():
-            crop = "rice"
+
+        supported_crops = ["wheat", "maize", "cotton", "sugarcane", "tomato", "chickpea", "groundnut"]
+        for word in user_text.split():
+            clean_word = word.strip(".,?!;:\"'").lower()
+            if clean_word and clean_word in ["rice", "barley", "potato"]:
+                crop = clean_word
+                break
 
         is_valid = all([crop, lat is not None, lon is not None, size is not None, date_val])
-        
-        if crop == "rice":
+
+        if crop and crop.lower() not in supported_crops:
             is_valid = False
             missing_fields = ["crop"]
-            clarifying_question = "Rice is not supported. Please choose one of the supported crops: wheat, maize, cotton, sugarcane, tomato, chickpea, groundnut."
+            clarifying_question = f"{crop} is not supported. Please choose one of the supported crops: {', '.join(supported_crops)}."
         elif not is_valid:
             missing_fields = [
                 k for k, v in [
@@ -61,7 +65,7 @@ async def mock_run_llm_agent_as_node(agent, *, ctx, node_input):
         else:
             missing_fields = []
             clarifying_question = ""
-            
+
         validation = ProfileValidation(
             is_valid=is_valid,
             missing_fields=missing_fields,
@@ -69,7 +73,7 @@ async def mock_run_llm_agent_as_node(agent, *, ctx, node_input):
             clarifying_question=clarifying_question
         )
         ctx.actions.state_delta[agent.output_key] = validation
-        
+
         event = Event(
             author=agent.name,
             content=types.Content(
@@ -87,7 +91,7 @@ async def mock_run_llm_agent_as_node(agent, *, ctx, node_input):
             explanation="Based on the weather forecast, you should irrigate 15,000 Liters on Day 3. You saved 12,000 Liters."
         )
         ctx.actions.state_delta[agent.output_key] = recommendation
-        
+
         event = Event(
             author=agent.name,
             content=types.Content(
@@ -170,7 +174,7 @@ def test_multi_turn_profile_persistence(mock_run, mock_get) -> None:
             run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         )
     )
-    
+
     # Assert session state saved crop
     updated_session1 = session_service.get_session_sync(app_name="test", user_id="test_user", session_id=session.id)
     assert updated_session1.state.get("crop") == "wheat"
@@ -187,7 +191,7 @@ def test_multi_turn_profile_persistence(mock_run, mock_get) -> None:
             run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         )
     )
-    
+
     # Assert session state persisted crop and added lat/lon
     updated_session2 = session_service.get_session_sync(app_name="test", user_id="test_user", session_id=session.id)
     assert updated_session2.state.get("crop") == "wheat"
@@ -206,7 +210,7 @@ def test_multi_turn_profile_persistence(mock_run, mock_get) -> None:
             run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         )
     )
-    
+
     # Assert all fields are persisted
     updated_session3 = session_service.get_session_sync(app_name="test", user_id="test_user", session_id=session.id)
     assert updated_session3.state.get("crop") == "wheat"
@@ -250,7 +254,7 @@ def test_unsupported_crop_rejection(mock_run) -> None:
             run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         )
     )
-    
+
     # Verify that the response asks user to choose a supported crop / rejects "rice"
     rejected = False
     for event in events:

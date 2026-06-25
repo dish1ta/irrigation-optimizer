@@ -54,7 +54,7 @@ class TestAgentLogic(unittest.TestCase):
         self.assertEqual(parse_profile_from_text("lat: 19.5, lon: 75.3")["latitude"], 19.5)
         self.assertEqual(parse_profile_from_text("latitude 19.5, longitude 75.3")["longitude"], 75.3)
         self.assertEqual(parse_profile_from_text("lat=-1.29, longitude=36.8")["latitude"], -1.29)
-        
+
         # Test unlabeled coordinates are ignored/missing
         result = parse_profile_from_text("My coordinates are 19.5, 75.3")
         self.assertNotIn("latitude", result)
@@ -64,12 +64,12 @@ class TestAgentLogic(unittest.TestCase):
         # We test the days_after_planting calculation by checking datetime date operations
         # Directly mock datetime or use date math
         today = date.today()
-        
+
         # 10 days ago
         ten_days_ago = today - timedelta(days=10)
         days = (today - ten_days_ago).days
         self.assertEqual(days, 10)
-        
+
         # 5 days in the future (clamped to 0)
         five_days_future = today + timedelta(days=5)
         days_future = (today - five_days_future).days
@@ -124,9 +124,9 @@ class TestSaveProfile(unittest.TestCase):
         ctx.state = {}
         payload = '{"crop": {"crop_type": "Tomatoes", "planting_date": "2026-03-01", "field_size_ha": 0.001}, "latitude": -1.2921, "longitude": 36.8219}'
         node_input = types.Content(parts=[types.Part.from_text(text=payload)])
-        
+
         save_profile._func(ctx, node_input)
-        
+
         self.assertEqual(ctx.state["crop"], "Tomatoes")
         self.assertEqual(ctx.state["planting_date"], "2026-03-01")
         self.assertEqual(ctx.state["field_size_ha"], 0.001)
@@ -138,9 +138,9 @@ class TestSaveProfile(unittest.TestCase):
         ctx.state = {}
         payload = '{"crop": "wheat", "latitude": 19.5, "longitude": 75.3, "field_size_ha": 2.5, "planting_date": "2026-05-10"}'
         node_input = types.Content(parts=[types.Part.from_text(text=payload)])
-        
+
         save_profile._func(ctx, node_input)
-        
+
         self.assertEqual(ctx.state["crop"], "wheat")
         self.assertEqual(ctx.state["latitude"], 19.5)
         self.assertEqual(ctx.state["longitude"], 75.3)
@@ -153,10 +153,9 @@ class TestSaveProfile(unittest.TestCase):
         # Malformed JSON should fallback to deterministic text parsing
         payload = '{"crop": "wheat", "latitude": 19.5, malformed'
         node_input = types.Content(parts=[types.Part.from_text(text=payload)])
-        
+
         save_profile._func(ctx, node_input)
-        
+
         # Crop wheat and lat 19.5 should be successfully extracted by regex fallback
         self.assertEqual(ctx.state["crop"], "wheat")
         self.assertEqual(ctx.state["latitude"], 19.5)
-

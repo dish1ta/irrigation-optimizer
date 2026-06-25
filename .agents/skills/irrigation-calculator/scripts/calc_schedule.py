@@ -136,7 +136,7 @@ def main():
     try:
         schedule = build_schedule(crop, days_after_planting, field_size_ha, forecast)
         savings = water_saved_vs_naive(schedule, field_size_ha)
-        
+
         output = {
             "schedule": schedule,
             "savings": savings
