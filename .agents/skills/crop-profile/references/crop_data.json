@@ -1,0 +1,44 @@
+{
+  "wheat": {
+    "Kc_ini": 0.30,
+    "Kc_mid": 1.15,
+    "Kc_end": 0.40,
+    "stage_lengths": [20, 25, 60, 30]
+  },
+  "maize": {
+    "Kc_ini": 0.30,
+    "Kc_mid": 1.20,
+    "Kc_end": 0.60,
+    "stage_lengths": [20, 35, 40, 30]
+  },
+  "cotton": {
+    "Kc_ini": 0.35,
+    "Kc_mid": 1.20,
+    "Kc_end": 0.60,
+    "stage_lengths": [30, 50, 55, 45]
+  },
+  "sugarcane": {
+    "Kc_ini": 0.40,
+    "Kc_mid": 1.25,
+    "Kc_end": 0.75,
+    "stage_lengths": [35, 60, 190, 60]
+  },
+  "tomato": {
+    "Kc_ini": 0.60,
+    "Kc_mid": 1.15,
+    "Kc_end": 0.80,
+    "stage_lengths": [25, 35, 45, 30]
+  },
+  "chickpea": {
+    "Kc_ini": 0.40,
+    "Kc_mid": 1.00,
+    "Kc_end": 0.35,
+    "stage_lengths": [20, 30, 35, 15]
+  },
+  "groundnut": {
+    "Kc_ini": 0.40,
+    "Kc_mid": 1.15,
+    "Kc_end": 0.60,
+    "stage_lengths": [25, 35, 45, 25]
+  }
+}

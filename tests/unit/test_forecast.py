@@ -14,6 +14,7 @@
 
 import unittest
 from unittest.mock import MagicMock, patch
+from datetime import date
 
 from google.genai import types
 from pydantic import ValidationError
@@ -170,8 +171,8 @@ class TestFetchWeatherData(unittest.TestCase):
 
         # Verify default fallback values (Tomatoes, Nairobi)
         self.assertEqual(ctx.state["crop"]["crop_type"], "Tomatoes")
-        self.assertEqual(ctx.state["crop"]["growth_stage"], "development")
-        self.assertEqual(ctx.state["crop"]["area_sq_meters"], 10.0)
+        self.assertEqual(ctx.state["crop"]["planting_date"], date(2026, 3, 1))
+        self.assertEqual(ctx.state["crop"]["field_size_ha"], 0.001)
         self.assertEqual(len(result.forecast), 7)
 
         # Verify requests.get was called with Nairobi coordinates
@@ -193,7 +194,7 @@ class TestFetchWeatherData(unittest.TestCase):
         ctx = MagicMock()
         ctx.state = {}
         # latitude = 95.0 is out of bounds
-        payload = '{"crop": {"crop_type": "Tomatoes", "growth_stage": "development", "area_sq_meters": 10.0}, "latitude": 95.0, "longitude": 36.8219}'
+        payload = '{"crop": {"crop_type": "Tomatoes", "planting_date": "2026-03-01", "field_size_ha": 0.001}, "latitude": 95.0, "longitude": 36.8219}'
         node_input = types.Content(parts=[types.Part.from_text(text=payload)])
 
         with self.assertRaises(ValidationError) as context:
@@ -206,7 +207,7 @@ class TestFetchWeatherData(unittest.TestCase):
         ctx = MagicMock()
         ctx.state = {}
         # longitude = -190.0 is out of bounds
-        payload = '{"crop": {"crop_type": "Tomatoes", "growth_stage": "development", "area_sq_meters": 10.0}, "latitude": 1.2921, "longitude": -190.0}'
+        payload = '{"crop": {"crop_type": "Tomatoes", "planting_date": "2026-03-01", "field_size_ha": 0.001}, "latitude": 1.2921, "longitude": -190.0}'
         node_input = types.Content(parts=[types.Part.from_text(text=payload)])
 
         with self.assertRaises(ValidationError) as context:

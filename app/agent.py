@@ -142,12 +142,13 @@ def get_forecast(lat: float, lon: float, days: int = 7) -> List[dict]:
 # Pydantic models for structured data routing
 
 
+from datetime import date
+
 class CropInfo(BaseModel):
-    crop_type: str = Field(description="Type of crop, e.g., maize, tomatoes, wheat")
-    growth_stage: str = Field(
-        description="Growth stage: initial, development, mid, or late"
-    )
-    area_sq_meters: float = Field(description="Area of the crop field in square meters")
+    crop_type: str = Field(description="Type of crop, e.g., maize, tomatoes, wheat, sugarcane")
+    planting_date: date = Field(description="The planting date of the crop (YYYY-MM-DD)")
+    field_size_ha: float = Field(description="Area of the crop field in hectares", gt=0.0)
+
 
 
 class FarmerRequest(BaseModel):
@@ -206,7 +207,9 @@ def fetch_weather_data(ctx: Context, node_input: types.Content) -> WeatherData:
         # Fallback values only if payload is genuinely missing
         req = FarmerRequest(
             crop=CropInfo(
-                crop_type="Tomatoes", growth_stage="development", area_sq_meters=10.0
+                crop_type="Tomatoes",
+                planting_date=date(2026, 3, 1),
+                field_size_ha=0.001
             ),
             latitude=-1.2921,
             longitude=36.8219,
