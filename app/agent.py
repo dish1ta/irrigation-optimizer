@@ -189,7 +189,7 @@ def parse_profile_from_text(text: str) -> dict:
     if size_match:
         extracted["field_size_ha"] = float(size_match.group(1))
 
-    # 3. Planting date regex (YYYY-MM-DD)
+    # 3. Planting date regex (YYYY-MM-DD or natural language dates)
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
     if date_match:
         try:
@@ -197,6 +197,38 @@ def parse_profile_from_text(text: str) -> dict:
             extracted["planting_date"] = date_match.group(1)
         except ValueError:
             pass
+    else:
+        month_map = {
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
+        }
+        # Try natural date month-first (e.g. March 1, 2026 or March 1st, 2026)
+        nat_match1 = re.search(
+            r'\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})\b',
+            text,
+            re.IGNORECASE
+        )
+        if nat_match1:
+            m_str = nat_match1.group(1).lower()
+            d_str = nat_match1.group(2)
+            y_str = nat_match1.group(3)
+            m_num = month_map.get(m_str[:3])
+            if m_num:
+                extracted["planting_date"] = f"{int(y_str):04d}-{m_num:02d}-{int(d_str):02d}"
+        else:
+            # Try natural date day-first (e.g. 1 March 2026)
+            nat_match2 = re.search(
+                r'\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*,?\s*(\d{4})\b',
+                text,
+                re.IGNORECASE
+            )
+            if nat_match2:
+                d_str = nat_match2.group(1)
+                m_str = nat_match2.group(2).lower()
+                y_str = nat_match2.group(3)
+                m_num = month_map.get(m_str[:3])
+                if m_num:
+                    extracted["planting_date"] = f"{int(y_str):04d}-{m_num:02d}-{int(d_str):02d}"
 
     # 4. Lat/Lon regex (strictly requires explicit labels, allows optional quotes)
     lat_match = re.search(r'"?(?:lat(?:itude)?)"?\s*[:=]?\s*(-?\d+(?:\.\d+)?)', text, re.IGNORECASE)
@@ -205,6 +237,13 @@ def parse_profile_from_text(text: str) -> dict:
         extracted["latitude"] = float(lat_match.group(1))
     if lon_match:
         extracted["longitude"] = float(lon_match.group(1))
+
+    # Fallback to coordinate pair match if labeled lat/lon are not found
+    if "latitude" not in extracted or "longitude" not in extracted:
+        coord_match = re.search(r'[\(\[]\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*[\)\]]', text)
+        if coord_match:
+            extracted["latitude"] = float(coord_match.group(1))
+            extracted["longitude"] = float(coord_match.group(2))
 
     # 5. PII Consent / Opt-in detection
     if re.search(r'\b(?:save|persist|remember|store)\s+(?:my\s+)?profile\b', text, re.IGNORECASE) or \
@@ -241,6 +280,7 @@ class IrrigationStateSchema(BaseModel):
     security_blocked: Optional[bool] = None
     profile_validation: Optional[ProfileValidation] = None
     irrigation_recommendation: Optional[IrrigationRecommendation] = None
+    current_user_message: Optional[str] = None
 
 
 class DailyForecast(BaseModel):
@@ -340,12 +380,17 @@ def validate_profile_deterministically(profile: dict) -> Tuple[bool, List[str], 
     return True, [], "", ""
 
 
+# Global to communicate crop type to monkeypatched LLM mock generator
+LAST_RUN_CROP = "wheat"
+
+
 # Workflow Nodes
 
 # 1. Save Profile Node
 @node
 def save_profile(ctx: Context, node_input: types.Content) -> dict:
     """Validates and stores the farmer's profile in session state."""
+    global LAST_RUN_CROP
     text = ""
     if node_input and hasattr(node_input, "parts") and node_input.parts:
         text = (node_input.parts[0].text or "").strip()
@@ -354,6 +399,38 @@ def save_profile(ctx: Context, node_input: types.Content) -> dict:
 
     # Reset security blocked flag on new turn
     ctx.state["security_blocked"] = False
+    ctx.state["current_user_message"] = text
+
+    # Reconstruct state from history if state is empty (e.g. during evaluation replay)
+    if ctx.session and ctx.session.events:
+        for ev in ctx.session.events:
+            # Check if event is user message
+            author = getattr(ev, "author", None)
+            if author is None and isinstance(ev, dict):
+                author = ev.get("author")
+            if author == "user":
+                content = getattr(ev, "content", None)
+                if content is None and isinstance(ev, dict):
+                    content = ev.get("content")
+                parts = getattr(content, "parts", None)
+                if parts is None and isinstance(content, dict):
+                    parts = content.get("parts")
+
+                parts_list = []
+                if parts:
+                    for part in parts:
+                        p_text = getattr(part, "text", None)
+                        if p_text is None and isinstance(part, dict):
+                            p_text = part.get("text")
+                        if p_text:
+                            parts_list.append(p_text)
+
+                text_hist = "".join(parts_list)
+                if text_hist:
+                    extracted_hist = parse_profile_from_text(text_hist)
+                    for k, v in extracted_hist.items():
+                        if v is not None:
+                            ctx.state[k] = v
 
     profile = {
         "crop": ctx.state.get("crop"),
@@ -407,6 +484,9 @@ def save_profile(ctx: Context, node_input: types.Content) -> dict:
         if v is not None:
             ctx.state[k] = v
 
+    if ctx.state.get("crop"):
+        LAST_RUN_CROP = ctx.state["crop"]
+
     return profile
 
 
@@ -458,7 +538,7 @@ def route_validation(ctx: Context, node_input: Any) -> Any:
             reason=det_reason,
             clarifying_question=det_question
         )
-        ctx.state["profile_validation"] = val
+        ctx.state["profile_validation"] = val.model_dump()
         ctx.route = False
         return val
 
@@ -600,22 +680,41 @@ def compute_schedule(ctx: Context, node_input: WeatherData) -> dict:
 @node
 def security_screen(ctx: Context, node_input: Any) -> Any:
     """Screens the current turn's latest user message for prompt-injection patterns."""
-    user_text = ""
-    if ctx.session and ctx.session.events:
+    user_text = ctx.state.get("current_user_message") or ""
+    if not user_text and ctx.session and ctx.session.events:
         # Scan backward to find strictly the latest user message from the current turn
         for ev in reversed(ctx.session.events):
-            if ev.author == "user" and ev.content and ev.content.parts:
-                user_text = "".join(part.text for part in ev.content.parts if part.text)
+            author = getattr(ev, "author", None)
+            if author is None and isinstance(ev, dict):
+                author = ev.get("author")
+            if author == "user":
+                content = getattr(ev, "content", None)
+                if content is None and isinstance(ev, dict):
+                    content = ev.get("content")
+                parts = getattr(content, "parts", None)
+                if parts is None and isinstance(content, dict):
+                    parts = content.get("parts")
+                parts_list = []
+                if parts:
+                    for part in parts:
+                        p_text = getattr(part, "text", None)
+                        if p_text is None and isinstance(part, dict):
+                            p_text = part.get("text")
+                        if p_text:
+                            parts_list.append(p_text)
+                user_text = "".join(parts_list)
                 break  # Scope strictly to current turn's input
 
     injection_patterns = [
-        r"(?i)ignore\s+(?:all\s+|previous\s+)?instructions",
+        r"(?i)ignore\s+(?:all\s+)?(?:previous\s+)?instructions",
         r"(?i)system\s+override",
         r"(?i)you\s+are\s+now\s+a\s+",
+        r"(?i)you\s+are\s+now\s+dan\b",
         r"(?i)act\s+as\s+a\s+",
+        r"(?i)act\s+as\s+dan\b",
         r"(?i)bypass\s+security",
         r"(?i)prompt\s+injection",
-        r"(?i)ignore\s+above",
+        r"(?i)ignore\s+(?:the\s+)?above\s+(?:instructions|prompt|message)",
         r"(?i)new\s+role",
         r"(?i)dan\s+mode",
     ]
@@ -645,7 +744,7 @@ def canned_injection_response(ctx: Context, node_input: Any) -> Any:
         crop_type=ctx.state.get("crop", "unknown"),
         explanation="I am sorry, but I cannot fulfill this request. I am only able to provide irrigation recommendations and answer related agricultural questions."
     )
-    ctx.state["irrigation_recommendation"] = response
+    ctx.state["irrigation_recommendation"] = response.model_dump()
     return response
 
 
@@ -743,18 +842,18 @@ def chain_edges(*nodes: Any) -> List[Edge]:
 
 # Build Edge List Explicitly
 edges = (
-    chain_edges(START, save_profile, validate_profile, route_validation)
+    chain_edges(START, save_profile, security_screen)
+    + [
+        Edge(from_node=security_screen, to_node=validate_profile, route=True),
+        Edge(from_node=security_screen, to_node=canned_injection_response, route=False),
+    ]
+    + chain_edges(validate_profile, route_validation)
     + [
         Edge(from_node=route_validation, to_node=fetch_weather, route=True),
         Edge(from_node=route_validation, to_node=clarify_profile, route=False),
     ]
-    + chain_edges(fetch_weather, compute_schedule, security_screen)
+    + chain_edges(fetch_weather, compute_schedule, recommend, format_recommendation)
     + [
-        Edge(from_node=security_screen, to_node=recommend, route=True),
-        Edge(from_node=security_screen, to_node=canned_injection_response, route=False),
-    ]
-    + [
-        Edge(from_node=recommend, to_node=format_recommendation),
         Edge(from_node=canned_injection_response, to_node=format_recommendation),
     ]
 )
@@ -868,9 +967,65 @@ if os.environ.get("E2E_MOCK") == "TRUE":
 
         elif "agronomy expert helper" in sys_inst.lower():
             import json
+            import re
+
+            # Extract the crop type
+            crop_type = LAST_RUN_CROP
+            supported = load_supported_crops()
+            crop_match = re.search(r'"crop"\s*:\s*"([a-zA-Z]+)"', prompt_text)
+            if not crop_match:
+                crop_match = re.search(r'crop\s*:\s*([a-zA-Z]+)', prompt_text, re.IGNORECASE)
+            if crop_match:
+                crop_type = crop_match.group(1).lower()
+            else:
+                for crop in supported:
+                    if re.search(r'\b' + re.escape(crop) + r'\b', prompt_text, re.IGNORECASE):
+                        crop_type = crop
+                        break
+
+            # Try to parse schedule JSON to detect if irrigation is needed
+            schedule_data = {}
+            for block in re.findall(r'(\{.*?\})', prompt_text, re.DOTALL):
+                try:
+                    parsed = json.loads(block)
+                    if "schedule" in parsed:
+                        schedule_data = parsed
+                        break
+                except Exception:
+                    pass
+
+            # Parse savings
+            saved_liters = 12000.0
+            pct_saved = 44.4
+            saved_liters_match = re.search(r'"saved_liters":\s*(\d+(?:\.\d+)?)', prompt_text)
+            if not saved_liters_match:
+                saved_liters_match = re.search(r'saved_liters[^\d]*(\d+(?:\.\d+)?)', prompt_text, re.IGNORECASE)
+            if saved_liters_match:
+                saved_liters = float(saved_liters_match.group(1))
+
+            pct_saved_match = re.search(r'"pct_saved":\s*(\d+(?:\.\d+)?)', prompt_text)
+            if not pct_saved_match:
+                pct_saved_match = re.search(r'pct_saved[^\d]*(\d+(?:\.\d+)?)', prompt_text, re.IGNORECASE)
+            if pct_saved_match:
+                pct_saved = float(pct_saved_match.group(1))
+
+            irrigation_days = []
+            if schedule_data and "schedule" in schedule_data:
+                for day_info in schedule_data["schedule"]:
+                    liters = day_info.get("liters_needed", 0.0)
+                    day_num = day_info.get("day")
+                    if liters > 0.0:
+                        irrigation_days.append((day_num, liters))
+
+            if not irrigation_days:
+                explanation = f"Based on the 7-day forecast, no irrigation is needed for your {crop_type} field due to sufficient rainfall. You saved {saved_liters:,.0f} Liters ({pct_saved:.1f}%) of water."
+            else:
+                days_str = ", ".join([f"Day {d} ({liters:,.0f} Liters)" for d, liters in irrigation_days])
+                explanation = f"Based on the 7-day forecast, you should irrigate your {crop_type} field on: {days_str}. This scheduling saves {saved_liters:,.0f} Liters ({pct_saved:.1f}%) of water compared to daily watering."
+
             recommendation_result = {
-                "crop_type": "wheat",
-                "explanation": "Based on the 7-day forecast, you should irrigate 15,000 Liters on Day 3. This scheduling saves 12,000 Liters (44.4%) of water compared to daily watering."
+                "crop_type": crop_type,
+                "explanation": explanation
             }
             from google.genai import types
             resp_obj = types.GenerateContentResponse(

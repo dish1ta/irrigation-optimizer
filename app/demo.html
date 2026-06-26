@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Irrigation Optimizer - Demo Console</title>
+    <!-- Modern typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #090d16;
+            --bg-surface: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary: #06b6d4; /* Cyan */
+            --primary-glow: rgba(6, 182, 212, 0.35);
+            --secondary: #8b5cf6; /* Purple */
+            --secondary-glow: rgba(139, 92, 246, 0.3);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.2);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(at 10% 20%, rgba(6, 182, 212, 0.1) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(139, 92, 246, 0.1) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            line-height: 1.5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header styling */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(9, 13, 22, 0.8);
+            backdrop-filter: blur(12px);
+            z-index: 10;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 2.25rem;
+            height: 2.25rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: #fff;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.4);
+        }
+
+        .logo-title h1 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #fff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-title p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .badge {
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            color: var(--primary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* Main Workspace */
+        .workspace {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar Inputs */
+        .sidebar {
+            border-right: 1px solid var(--border-color);
+            background: rgba(13, 18, 30, 0.4);
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .sidebar-section h2 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Presets */
+        .presets-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        .preset-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            font-family: inherit;
+            font-size: 0.825rem;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .preset-btn:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .preset-btn strong {
+            display: block;
+            color: var(--primary);
+            margin-bottom: 0.15rem;
+        }
+
+        /* Inputs Form */
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .input-group label {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .input-control {
+            background: rgba(17, 24, 39, 0.6);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 0.65rem 0.85rem;
+            border-radius: 0.375rem;
+            font-family: inherit;
+            font-size: 0.85rem;
+            outline: none;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .input-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 8px rgba(6, 182, 212, 0.2);
+        }
+
+        .row-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #fff;
+            border: none;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+            margin-top: 0.5rem;
+        }
+
+        .btn-submit:hover {
+            opacity: 0.95;
+            box-shadow: 0 4px 16px rgba(6, 182, 212, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+
+        /* Center Display Area */
+        .main-content {
+            display: grid;
+            grid-template-rows: 1fr auto;
+            height: 100%;
+            overflow: hidden;
+            background: rgba(10, 15, 26, 0.2);
+        }
+
+        /* Chat / Dashboard View */
+        .chat-section {
+            padding: 2rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Chat Bubbles */
+        .chat-bubble {
+            max-width: 80%;
+            padding: 1rem 1.25rem;
+            border-radius: 0.75rem;
+            font-size: 0.9rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-bubble.user {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            align-self: flex-end;
+            border-bottom-right-radius: 0.15rem;
+        }
+
+        .chat-bubble.agent {
+            background: rgba(6, 182, 212, 0.06);
+            border: 1px solid rgba(6, 182, 212, 0.12);
+            align-self: flex-start;
+            border-bottom-left-radius: 0.15rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .chat-bubble.blocked {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            align-self: flex-start;
+            border-bottom-left-radius: 0.15rem;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+        }
+
+        /* visual output block */
+        .output-block {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-top: 1rem;
+            width: 100%;
+        }
+
+        /* Stats Savings Card */
+        .savings-card {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(139, 92, 246, 0.1));
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            padding: 1.25rem;
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .savings-info h3 {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .savings-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+            margin: 0.25rem 0;
+        }
+
+        .savings-pct {
+            background: var(--success);
+            color: #000;
+            font-weight: 700;
+            font-size: 0.75rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 0.25rem;
+            display: inline-block;
+        }
+
+        /* 7-day forecast cards */
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+        }
+
+        .day-card {
+            background: rgba(17, 24, 39, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100px;
+            transition: all 0.2s ease;
+        }
+
+        .day-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .day-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .day-val {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #fff;
+            margin: 0.35rem 0;
+        }
+
+        .day-val.irrigate {
+            color: var(--primary);
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.4);
+        }
+
+        .day-weather {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+
+        /* Footer Input Area */
+        .input-bar-container {
+            border-top: 1px solid var(--border-color);
+            background: rgba(9, 13, 22, 0.9);
+            padding: 1.25rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            z-index: 10;
+        }
+
+        .chat-input-wrapper {
+            flex: 1;
+            position: relative;
+            background: rgba(17, 24, 39, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 9999px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem 0.25rem 1.25rem;
+            transition: all 0.2s ease;
+        }
+
+        .chat-input-wrapper:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+        }
+
+        .chat-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            padding: 0.65rem 0;
+        }
+
+        .btn-send {
+            background: var(--primary);
+            color: #000;
+            border: none;
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            transition: all 0.2s ease;
+        }
+
+        .btn-send:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        .btn-reset {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            padding: 0.65rem 1.25rem;
+            border-radius: 9999px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-reset:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        /* Loader Animation */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.5rem 0;
+        }
+
+        .typing-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            background: var(--primary);
+            border-radius: 50%;
+            opacity: 0.4;
+            animation: bounce 1.2s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); opacity: 0.4; }
+            50% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        /* Disclaimer footer block */
+        .disclaimer-block {
+            font-size: 0.725rem;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 0.5rem;
+            padding: 0 1rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-section">
+            <div class="logo-icon">AG</div>
+            <div class="logo-title">
+                <h1>Irrigation Optimizer</h1>
+                <p>Advanced Water Management & AI Guardrails</p>
+            </div>
+        </div>
+        <div class="badge">E2E Mock Mode Enabled</div>
+    </header>
+
+    <div class="workspace">
+        <!-- Sidebar Controls -->
+        <div class="sidebar">
+            <!-- Preset Scenarios -->
+            <div class="sidebar-section">
+                <h2>Quick Presets</h2>
+                <div class="presets-grid">
+                    <button class="preset-btn" onclick="loadPreset('nashik')">
+                        <strong>Nashik, Maharashtra</strong>
+                        Sugarcane, 0.4 ha, Planted March 1, 2026
+                    </button>
+                    <button class="preset-btn" onclick="loadPreset('wheat')">
+                        <strong>Wheat Standard</strong>
+                        Wheat, 19.5 lat / 75.3 lon, 2.5 ha, Planted May 10, 2026
+                    </button>
+                    <button class="preset-btn" onclick="loadPreset('rainy')">
+                        <strong>Rainy Week Field</strong>
+                        Wheat, 10.0 lat / 20.0 lon, 3.0 ha, Planted May 10, 2026
+                    </button>
+                </div>
+            </div>
+
+            <!-- Profile Parameters -->
+            <div class="sidebar-section">
+                <h2>Profile Details</h2>
+                <form id="profile-form" onsubmit="submitForm(event)">
+                    <div class="input-group">
+                        <label for="crop">Crop Type</label>
+                        <select id="crop" class="input-control">
+                            <option value="wheat">Wheat</option>
+                            <option value="maize">Maize</option>
+                            <option value="cotton">Cotton</option>
+                            <option value="sugarcane">Sugarcane</option>
+                            <option value="tomato">Tomato</option>
+                            <option value="chickpea">Chickpea</option>
+                            <option value="groundnut">Groundnut</option>
+                        </select>
+                    </div>
+
+                    <div class="row-2">
+                        <div class="input-group">
+                            <label for="latitude">Latitude</label>
+                            <input type="number" id="latitude" step="any" class="input-control" placeholder="19.5" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="longitude">Longitude</label>
+                            <input type="number" id="longitude" step="any" class="input-control" placeholder="75.3" required>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="field-size">Field Size (Hectares)</label>
+                        <input type="number" id="field-size" step="any" class="input-control" placeholder="2.5" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="planting-date">Planting Date</label>
+                        <input type="date" id="planting-date" class="input-control" required>
+                    </div>
+
+                    <button type="submit" class="btn-submit">
+                        Run Recommendations
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Conversation and Displays -->
+        <div class="main-content">
+            <!-- Messages Container -->
+            <div class="chat-section" id="chat-container">
+                <div class="chat-bubble agent">
+                    Hello! Provide your profile details in the left sidebar or select a Quick Preset to compute a water-efficient 7-day irrigation schedule.
+                </div>
+            </div>
+
+            <!-- Input Bar -->
+            <div class="input-bar-container">
+                <button class="btn-reset" onclick="resetSession()">New Session</button>
+                <div class="chat-input-wrapper">
+                    <input type="text" id="chat-input" class="chat-input" placeholder="Type a follow-up question or security test phrase..." onkeydown="handleInputKey(event)">
+                    <button class="btn-send" onclick="sendChatMessage()">→</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Unique user and session ID generator
+        const userId = "demo_user_" + Math.random().toString(36).substring(7);
+        let sessionId = null;
+
+        // Load Preset Profiles
+        function loadPreset(type) {
+            const cropSel = document.getElementById("crop");
+            const latInput = document.getElementById("latitude");
+            const lonInput = document.getElementById("longitude");
+            const sizeInput = document.getElementById("field-size");
+            const dateInput = document.getElementById("planting-date");
+
+            if (type === 'nashik') {
+                cropSel.value = 'sugarcane';
+                latInput.value = '19.9975';
+                lonInput.value = '73.7898';
+                sizeInput.value = '0.4';
+                dateInput.value = '2026-03-01';
+            } else if (type === 'wheat') {
+                cropSel.value = 'wheat';
+                latInput.value = '19.5';
+                lonInput.value = '75.3';
+                sizeInput.value = '2.5';
+                dateInput.value = '2026-05-10';
+            } else if (type === 'rainy') {
+                cropSel.value = 'wheat';
+                latInput.value = '10.0';
+                lonInput.value = '20.0';
+                sizeInput.value = '3.0';
+                dateInput.value = '2026-05-10';
+            }
+        }
+
+        // Initialize Session ID
+        async function getSession() {
+            if (sessionId) return sessionId;
+            try {
+                const response = await fetch(`/apps/app/users/${userId}/sessions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state: {} })
+                });
+                const data = await response.json();
+                sessionId = data.id;
+                return sessionId;
+            } catch (e) {
+                console.error("Error creating session:", e);
+                alert("Failed to initialize session on the server.");
+            }
+        }
+
+        // Reset Session
+        async function resetSession() {
+            sessionId = null;
+            document.getElementById("chat-container").innerHTML = `
+                <div class="chat-bubble agent">
+                    Session reset. Provide your profile details or select a Quick Preset to start a new recommendation.
+                </div>
+            `;
+            await getSession();
+        }
+
+        // Submit Profile Form
+        async function submitForm(e) {
+            e.preventDefault();
+            const crop = document.getElementById("crop").value;
+            const lat = parseFloat(document.getElementById("latitude").value);
+            const lon = parseFloat(document.getElementById("longitude").value);
+            const size = parseFloat(document.getElementById("field-size").value);
+            const date = document.getElementById("planting-date").value;
+
+            // Formulate structured prompt
+            const textPrompt = `Hi, I am growing ${crop} at lat ${lat}, lon ${lon}, field size is ${size}ha, planted on ${date}.`;
+            await processPrompt(textPrompt);
+        }
+
+        // Handle Input Keydown
+        function handleInputKey(e) {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        }
+
+        // Send Chat Follow-up
+        async function sendChatMessage() {
+            const inputEl = document.getElementById("chat-input");
+            const text = inputEl.value.trim();
+            if (!text) return;
+            inputEl.value = "";
+            await processPrompt(text);
+        }
+
+        // Appends bubble to chat
+        function appendBubble(role, text) {
+            const container = document.getElementById("chat-container");
+            const bubble = document.createElement("div");
+            bubble.className = `chat-bubble ${role}`;
+
+            // Format canned response differently if it blocks injection
+            if (text.includes("cannot fulfill this request") || text.includes("only able to provide irrigation")) {
+                bubble.className = "chat-bubble blocked";
+            }
+
+            bubble.innerText = text;
+            container.appendChild(bubble);
+            container.scrollTop = container.scrollHeight;
+            return bubble;
+        }
+
+        // Core processing loop using SSE streaming
+        async function processPrompt(promptText) {
+            // 1. Add User bubble
+            appendBubble('user', promptText);
+
+            // 2. Add temporary typing indicator
+            const container = document.getElementById("chat-container");
+            const loader = document.createElement("div");
+            loader.className = "typing-indicator";
+            loader.innerHTML = `
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            `;
+            container.appendChild(loader);
+            container.scrollTop = container.scrollHeight;
+
+            const sessId = await getSession();
+            try {
+                const response = await fetch('/run_sse', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        app_name: 'app',
+                        user_id: userId,
+                        session_id: sessId,
+                        new_message: {
+                            role: 'user',
+                            parts: [{ text: promptText }]
+                        },
+                        streaming: true
+                    })
+                });
+
+                // Remove typing indicator
+                loader.remove();
+
+                if (!response.ok) {
+                    throw new Error("HTTP error " + response.status);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let finalAgentText = '';
+                let scheduleData = null;
+                let agentBubble = null;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('data: ')) {
+                            try {
+                                const eventData = JSON.parse(trimmed.substring(6));
+
+                                // Detect scheduler tool details if present
+                                if (eventData.output && eventData.output.schedule) {
+                                    scheduleData = eventData.output;
+                                }
+
+                                // Accumulate response parts
+                                if (eventData.content && eventData.content.parts) {
+                                    const partText = eventData.content.parts.map(p => p.text || '').join('');
+                                    if (partText) {
+                                        finalAgentText += partText;
+                                        if (!agentBubble) {
+                                            agentBubble = appendBubble('agent', finalAgentText);
+                                        } else {
+                                            agentBubble.innerText = finalAgentText;
+
+                                            // Handle dynamically switching to blocked style
+                                            if (finalAgentText.includes("cannot fulfill this request")) {
+                                                agentBubble.className = "chat-bubble blocked";
+                                            }
+                                        }
+                                        container.scrollTop = container.scrollHeight;
+                                    }
+                                }
+                            } catch (err) {
+                                // Event parsing skip if not matching
+                            }
+                        }
+                    }
+                }
+
+                // If schedule data is available, render a visual dashboard ONLY if not blocked
+                const isBlocked = finalAgentText.includes("cannot fulfill this request") ||
+                                  finalAgentText.includes("only able to provide");
+                if (!isBlocked && scheduleData && scheduleData.schedule) {
+                    renderVisualDashboard(container, scheduleData);
+                }
+
+            } catch (err) {
+                loader.remove();
+                console.error("Stream read error:", err);
+                let friendlyMsg = "An error occurred during communication: " + err.message;
+                if (err.message.includes("503") || err.message.includes("500") || err.message.includes("status 503") || err.message.includes("status 500")) {
+                    friendlyMsg = "The AI service is temporarily experiencing high demand. Please wait a few seconds and try again.";
+                }
+                appendBubble('agent', friendlyMsg);
+            }
+        }
+
+        // Render Visual Schedule Dashboard
+        function renderVisualDashboard(container, data) {
+            const block = document.createElement("div");
+            block.className = "output-block";
+
+            // 1. Water savings metric
+            let savedLit = 0;
+            let savedPct = 0;
+            if (data.savings) {
+                savedLit = data.savings.saved_liters || 0;
+                savedPct = data.savings.pct_saved || 0;
+            }
+
+            const savingsHtml = `
+                <div class="savings-card">
+                    <div class="savings-info">
+                        <h3>Water Conservation Metric</h3>
+                        <div class="savings-value">${savedLit.toLocaleString()} Liters</div>
+                        <div>Naive comparison savings</div>
+                    </div>
+                    <div class="savings-pct">${savedPct.toFixed(1)}% Saved</div>
+                </div>
+            `;
+
+            // 2. 7-Day schedule grid
+            let daysHtml = '<div class="schedule-grid">';
+            data.schedule.forEach(day => {
+                const isIrrigate = day.net_irrigation_mm > 0;
+                const mmText = isIrrigate ? `${day.net_irrigation_mm.toFixed(1)} mm` : "0 mm";
+                const litText = isIrrigate ? `${day.liters_needed.toLocaleString()} L` : "None";
+                const dayClass = isIrrigate ? "day-val irrigate" : "day-val";
+
+                let dateStr = day.date;
+                if (dateStr) {
+                    try {
+                        const parsedDate = new Date(dateStr);
+                        if (!isNaN(parsedDate.getTime())) {
+                            dateStr = parsedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                        }
+                    } catch (e) {}
+                } else if (day.day !== undefined) {
+                    dateStr = `Day ${day.day}`;
+                } else {
+                    dateStr = "Forecast";
+                }
+
+                daysHtml += `
+                    <div class="day-card">
+                        <div class="day-title">${dateStr}</div>
+                        <div class="${dayClass}">${litText}</div>
+                        <div class="day-weather">${mmText} depth</div>
+                    </div>
+                `;
+            });
+            daysHtml += '</div>';
+
+            block.innerHTML = savingsHtml + daysHtml;
+            container.appendChild(block);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Auto-run Session retrieval on load
+        getSession();
+    </script>
+</body>
+</html>

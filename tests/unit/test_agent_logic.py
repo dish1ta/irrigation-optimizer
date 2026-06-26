@@ -159,3 +159,26 @@ class TestSaveProfile(unittest.TestCase):
         # Crop wheat and lat 19.5 should be successfully extracted by regex fallback
         self.assertEqual(ctx.state["crop"], "wheat")
         self.assertEqual(ctx.state["latitude"], 19.5)
+
+    def test_parse_natural_language_profile(self):
+        ctx = MagicMock()
+        ctx.state = {}
+        payload = "I'm growing sugarcane on a 0.4 hectare field near Nashik, Maharashtra (19.9975, 73.7898). Planted on March 1, 2026."
+        node_input = types.Content(parts=[types.Part.from_text(text=payload)])
+
+        save_profile._func(ctx, node_input)
+
+        self.assertEqual(ctx.state["crop"], "sugarcane")
+        self.assertEqual(ctx.state["field_size_ha"], 0.4)
+        self.assertEqual(ctx.state["latitude"], 19.9975)
+        self.assertEqual(ctx.state["longitude"], 73.7898)
+        self.assertEqual(ctx.state["planting_date"], "2026-03-01")
+
+        # Test day-first format
+        ctx2 = MagicMock()
+        ctx2.state = {}
+        payload2 = "Planted on 1st March 2026, crop is maize, lat 12.34, lon 56.78, field size 2ha"
+        node_input2 = types.Content(parts=[types.Part.from_text(text=payload2)])
+        save_profile._func(ctx2, node_input2)
+        self.assertEqual(ctx2.state["planting_date"], "2026-03-01")
+        self.assertEqual(ctx2.state["crop"], "maize")

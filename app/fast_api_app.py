@@ -15,6 +15,7 @@ import os
 
 import google.auth
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from google.adk.cli.fast_api import get_fast_api_app
 from google.cloud import logging as google_cloud_logging
 
@@ -48,6 +49,14 @@ app: FastAPI = get_fast_api_app(
 )
 app.title = "irrigation-optimizer"
 app.description = "API for interacting with the Agent irrigation-optimizer"
+
+
+@app.get("/demo", response_class=HTMLResponse)
+def serve_demo_ui() -> str:
+    """Serves the premium custom demo dashboard page."""
+    html_path = os.path.join(os.path.dirname(__file__), "demo.html")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 @app.post("/feedback")
