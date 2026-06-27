@@ -45,7 +45,7 @@ app: FastAPI = get_fast_api_app(
     artifact_service_uri=artifact_service_uri,
     allow_origins=allow_origins,
     session_service_uri=session_service_uri,
-    otel_to_cloud=True,
+    otel_to_cloud=False,
 )
 app.title = "irrigation-optimizer"
 app.description = "API for interacting with the Agent irrigation-optimizer"

@@ -495,7 +495,7 @@ supported_crops = load_supported_crops()
 supported_crops_str = ", ".join(supported_crops)
 validate_profile = LlmAgent(
     name="validate_profile",
-    model="gemini-flash-latest",
+    model="gemini-3.1-flash-lite",
     instruction=(
         "You are an agronomy system validator. Your task is to judge whether the farmer's profile "
         "is complete and valid. The profile must contain:\n"
@@ -672,7 +672,7 @@ def compute_schedule(ctx: Context, node_input: WeatherData) -> dict:
             )
             day["net_irrigation_mm"] = MAX_DAILY_MM
             day["liters_needed"] = round(MAX_DAILY_MM * field_size_ha * 10000.0, 1)
-
+    schedule_output["crop"] = crop
     return schedule_output
 
 
@@ -748,18 +748,31 @@ def canned_injection_response(ctx: Context, node_input: Any) -> Any:
     return response
 
 
-# 7. LLM Recommend Agent Node
+def ground_crop_type(callback_context, llm_response):
+    if llm_response and llm_response.content and llm_response.content.parts:
+        for part in llm_response.content.parts:
+            if part.text:
+                try:
+                    data = json.loads(part.text)
+                    data["crop_type"] = callback_context.state.get("crop", "unknown")
+                    part.text = json.dumps(data)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+    return None
+
 recommend = LlmAgent(
     name="recommend",
-    model="gemini-flash-latest",
-    instruction=(
-        "You are an agronomy expert helper. Your task is to take the numeric irrigation schedule and "
-        "water savings comparison and turn them into a short, friendly, and practical explanation for the farmer. "
-        "Be concise and clear about which days they need to irrigate, how much water in liters to apply, "
-        "and how much water they saved compared to a naive baseline."
-    ),
+    model="gemini-3.1-flash-lite",
+    instruction=("You are an agronomy expert helper. The input data includes a 'crop' field stating the "
+    "farmer's exact crop type — you must copy that value verbatim into your crop_type output. "
+    "Do not infer, guess, or substitute a different crop under any circumstances. "
+    "Your task is to take the numeric irrigation schedule and water savings comparison and turn "
+    "them into a short, friendly, and practical explanation for the farmer. Be concise and clear "
+    "about which day(s) to irrigate, how many liters to apply, and how much water is saved "
+    "compared to a standard daily watering baseline."),
     output_schema=IrrigationRecommendation,
     output_key="irrigation_recommendation",
+    after_model_callback=ground_crop_type,
 )
 
 
@@ -771,7 +784,12 @@ def format_recommendation(ctx: Context, node_input: Any) -> Any:
     val = node_input
     if val is None:
         val = ctx.state.get("irrigation_recommendation")
-
+    real_crop = ctx.state.get("crop", "unknown")
+    if val is not None:
+        if hasattr(val, "crop_type"):
+            val.crop_type = real_crop
+        elif isinstance(val, dict):
+            val["crop_type"] = real_crop
     explanation = ""
     if val and hasattr(val, "explanation"):
         explanation = val.explanation
