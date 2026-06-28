@@ -31,8 +31,14 @@ if os.path.exists(env_path):
                 key, value = line.split("=", 1)
                 os.environ[key.strip()] = value.strip()
 
-# Set non-enterprise local authentication variables
-os.environ["GOOGLE_GENAI_USE_ENTERPRISE"] = "FALSE"
+# Set non-enterprise local authentication variables if not already configured
+if "GOOGLE_GENAI_USE_ENTERPRISE" not in os.environ:
+    os.environ["GOOGLE_GENAI_USE_ENTERPRISE"] = "FALSE"
+
+# Force location to "us" multi-region for Vertex AI so that gemini-3.1-flash-lite resolves correctly
+if os.environ.get("GOOGLE_GENAI_USE_ENTERPRISE") == "TRUE":
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "us"
+
 
 from google.adk.workflow import Workflow, node, START, Edge
 from google.adk.agents import LlmAgent
@@ -164,6 +170,16 @@ def load_supported_crops() -> List[str]:
             "crop_data.json",
         )
     )
+    if not os.path.exists(crop_data_path):
+        crop_data_path = os.path.abspath(
+            os.path.join(
+                script_dir,
+                "skills",
+                "crop-profile",
+                "references",
+                "crop_data.json",
+            )
+        )
     try:
         with open(crop_data_path, "r") as f:
             data = json.load(f)
@@ -639,6 +655,16 @@ def compute_schedule(ctx: Context, node_input: WeatherData) -> dict:
             "calc_schedule.py"
         )
     )
+    if not os.path.exists(script_path):
+        script_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "skills",
+                "irrigation-calculator",
+                "scripts",
+                "calc_schedule.py"
+            )
+        )
 
     payload = {
         "crop": crop,
